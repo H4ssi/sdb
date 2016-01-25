@@ -8,6 +8,7 @@ import java.nio.channels.CompletionHandler;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CoderResult;
 import java.util.logging.Logger;
 
 public class Client {
@@ -38,38 +39,104 @@ public class Client {
 	}
 
 	private void sendThenRead(String msg) {
-		cbuf.clear();
-		cbuf.put(msg).put('\n').flip();
-		buf.clear();
-		e.encode(cbuf, buf, true);
-		buf.flip();
+		sendThenRead(msg, 0);
+	}
 
+	private void sendThenRead(String msg, int pos) {
+		int end = Math.min(msg.length(), pos + cbuf.remaining());
+
+		cbuf.put(msg, pos, end);
+
+		if (end == msg.length() && cbuf.hasRemaining()) {
+			cbuf.put('\n');
+			cbuf.flip();
+			sendThenRead();
+		} else {
+			cbuf.flip();
+			sendAndKeepSending(msg, end);
+		}
+	}
+
+	public void sendAndKeepSending(final String msg, final int pos) {
+		CoderResult r = e.encode(cbuf, buf, false);
+		buf.flip();
+		if (r.isUnderflow()) {
+			cbuf.clear();
+		} else {
+			cbuf.compact();
+		}
+		send(new Runnable() {
+			@Override
+			public void run() {
+				sendThenRead(msg, pos);
+			}
+		});
+	}
+
+	public void sendThenRead() {
+		CoderResult r = e.encode(cbuf, buf, true);
+		if (r.isUnderflow()) {
+			cbuf.clear();
+			flushThenRead();
+		} else {
+			buf.flip();
+			send(new Runnable() {
+				@Override
+				public void run() {
+					sendThenRead();
+				}
+			});
+		}
+	}
+
+	public void flushThenRead() {
+		CoderResult r = e.flush(buf);
+		buf.flip();
+		send(r.isUnderflow() //
+				? new Runnable() {
+					@Override
+					public void run() {
+						read();
+					}
+				} //
+				: new Runnable() {
+					@Override
+					public void run() {
+						flushThenRead();
+					}
+				});
+	}
+
+	public void send(final Runnable then) {
 		socket.write(buf, null, new CompletionHandler<Integer, Void>() {
 			@Override
 			public void completed(Integer result, Void attachment) {
 				buf.clear();
-				socket.read(buf, null, new CompletionHandler<Integer, Void>() {
-					@Override
-					public void completed(Integer result, Void attachment) {
-						cbuf.clear();
-						buf.flip();
-						d.decode(buf, cbuf, true);
-						cbuf.flip();
-
-						onData(cbuf.toString());
-					}
-
-					@Override
-					public void failed(Throwable exc, Void attachment) {
-
-					}
-				});
+				then.run();
 			}
 
 			@Override
 			public void failed(Throwable exc, Void attachment) {
 				// TODO Auto-generated method stub
+			}
+		});
+	}
 
+	public void read() {
+		socket.read(buf, null, new CompletionHandler<Integer, Void>() {
+			@Override
+			public void completed(Integer result, Void attachment) {
+				cbuf.clear();
+				buf.flip();
+				d.decode(buf, cbuf, true);
+				cbuf.flip();
+
+				onData(cbuf.toString());
+			}
+
+			@Override
+			public void failed(Throwable exc, Void attachment) {
+				// TODO Auto-generated method stub
 			}
 		});
 	}
