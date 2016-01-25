@@ -2,7 +2,6 @@ package at.floating_integer.sdb.server;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
@@ -16,10 +15,17 @@ public class Server {
 
 		serverSocket.bind(new InetSocketAddress(port));
 
+		accept(serverSocket);
+
+		L.info("Server started listening on port " + port);
+	}
+
+	public void accept(final AsynchronousServerSocketChannel serverSocket) {
 		serverSocket.accept(null, new CompletionHandler<AsynchronousSocketChannel, Void>() {
 			@Override
 			public void completed(AsynchronousSocketChannel result, Void attachment) {
-				handle(result);
+				accept(serverSocket);
+				new Client(result);
 			}
 
 			@Override
@@ -28,17 +34,6 @@ public class Server {
 
 			}
 		});
-
-		L.info("Server started listening on port " + port);
 	}
 
-	protected void handle(AsynchronousSocketChannel result) {
-		try {
-			L.info("client connected: " + result.getRemoteAddress());
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		result.write(ByteBuffer.wrap("hallo!\n".getBytes()));
-	}
 }
