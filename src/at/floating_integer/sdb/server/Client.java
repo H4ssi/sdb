@@ -111,8 +111,12 @@ public class Client {
 		socket.write(buf, null, new CompletionHandler<Integer, Void>() {
 			@Override
 			public void completed(Integer result, Void attachment) {
-				buf.clear();
-				then.run();
+				if (buf.remaining() == 0) {
+					buf.clear();
+					then.run();
+				} else {
+					send(then);
+				}
 			}
 
 			@Override
