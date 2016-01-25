@@ -92,19 +92,22 @@ public class Client {
 	public void flushThenRead() {
 		CoderResult r = e.flush(buf);
 		buf.flip();
-		send(r.isUnderflow() //
-				? new Runnable() {
-					@Override
-					public void run() {
-						read();
-					}
-				} //
-				: new Runnable() {
-					@Override
-					public void run() {
-						flushThenRead();
-					}
-				});
+		if (r.isUnderflow()) {
+			e.reset();
+			send(new Runnable() {
+				@Override
+				public void run() {
+					read();
+				}
+			});
+		} else {
+			send(new Runnable() {
+				@Override
+				public void run() {
+					flushThenRead();
+				}
+			});
+		}
 	}
 
 	public void send(final Runnable then) {
