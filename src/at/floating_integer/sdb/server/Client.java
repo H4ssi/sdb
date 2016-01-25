@@ -21,6 +21,8 @@ public class Client {
 	private final CharsetEncoder e = Charset.forName("UTF-8").newEncoder();
 	private final CharsetDecoder d = Charset.forName("UTF-8").newDecoder();
 
+	private final StringBuilder input = new StringBuilder();
+
 	public Client(AsynchronousSocketChannel socket) {
 		this.socket = socket;
 
@@ -57,7 +59,7 @@ public class Client {
 		}
 	}
 
-	public void sendAndKeepSending(final String msg, final int pos) {
+	private void sendAndKeepSending(final String msg, final int pos) {
 		CoderResult r = e.encode(cbuf, buf, false);
 		buf.flip();
 		if (r.isUnderflow()) {
@@ -73,7 +75,7 @@ public class Client {
 		});
 	}
 
-	public void sendThenRead() {
+	private void sendThenRead() {
 		CoderResult r = e.encode(cbuf, buf, true);
 		if (r.isUnderflow()) {
 			cbuf.clear();
@@ -89,7 +91,7 @@ public class Client {
 		}
 	}
 
-	public void flushThenRead() {
+	private void flushThenRead() {
 		CoderResult r = e.flush(buf);
 		buf.flip();
 		if (r.isUnderflow()) {
@@ -102,15 +104,17 @@ public class Client {
 			});
 		} else {
 			send(new Runnable() {
+
 				@Override
 				public void run() {
 					flushThenRead();
 				}
+
 			});
 		}
 	}
 
-	public void send(final Runnable then) {
+	private void send(final Runnable then) {
 		socket.write(buf, null, new CompletionHandler<Integer, Void>() {
 			@Override
 			public void completed(Integer result, Void attachment) {
@@ -129,16 +133,12 @@ public class Client {
 		});
 	}
 
-	public void read() {
+	private void read() {
 		socket.read(buf, null, new CompletionHandler<Integer, Void>() {
 			@Override
 			public void completed(Integer result, Void attachment) {
-				cbuf.clear();
 				buf.flip();
-				d.decode(buf, cbuf, true);
-				cbuf.flip();
-
-				onData(cbuf.toString());
+				parseMessage();
 			}
 
 			@Override
@@ -148,7 +148,39 @@ public class Client {
 		});
 	}
 
-	public void onData(String data) {
+	private void parseMessage() {
+		while (true) {
+			CoderResult r = d.decode(buf, cbuf, false);
+			cbuf.flip();
+
+			input.append(cbuf.toString());
+			cbuf.clear();
+
+			if (r.isOverflow()) {
+				continue;
+			}
+
+			buf.compact();
+			testForInput();
+
+			return;
+		}
+	}
+
+	private void testForInput() {
+		int pos = input.indexOf("\n");
+
+		if (pos == -1) {
+			read();
+			return;
+		}
+
+		onData(input.substring(0, pos));
+
+		input.delete(0, pos + 1);
+	}
+
+	private void onData(String data) {
 		L.info("client name is " + data);
 
 		sendThenRead("has login " + data);
