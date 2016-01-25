@@ -6,8 +6,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.util.logging.Logger;
 
 public class Server {
+	private static final Logger L = Logger.getAnonymousLogger();
+
 	public Server(int port) throws IOException {
 		AsynchronousServerSocketChannel serverSocket = AsynchronousServerSocketChannel.open();
 
@@ -26,9 +29,16 @@ public class Server {
 			}
 		});
 
+		L.info("Server started listening on port " + port);
 	}
 
 	protected void handle(AsynchronousSocketChannel result) {
+		try {
+			L.info("client connected: " + result.getRemoteAddress());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		result.write(ByteBuffer.wrap("hallo!\n".getBytes()));
 	}
 }
