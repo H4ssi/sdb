@@ -11,6 +11,9 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
 import java.util.logging.Logger;
 
+import at.floating_integer.sdb.command.Command;
+import at.floating_integer.sdb.command.ImaCommand;
+
 public class Client {
 	private static final Logger L = Logger.getAnonymousLogger();
 	private final AsynchronousSocketChannel socket;
@@ -47,25 +50,35 @@ public class Client {
 		this.currentHandler = new CommandHandler() {
 			@Override
 			public boolean handle(String cmd) {
-				if (!cmd.startsWith("ima ")) {
+
+				Command c = Command.parse(cmd);
+
+				if (!(c instanceof ImaCommand)) {
 					return false;
 				}
-				String name = cmd.substring(4).trim();
 
-				if ("".equals(name)) {
-					return false;
-				}
-
-				Client.this.name = name;
-
+				name = ((ImaCommand) c).getUserName();
 				L.info("client name is " + name);
 
-				sendThenRead("has login " + Client.this.name);
+				installDefaultHandler();
+
+				sendThenRead("has login " + name);
 
 				return true;
 			}
 		};
 		sendThenRead("who");
+	}
+
+	private void installDefaultHandler() {
+		this.currentHandler = new CommandHandler() {
+
+			@Override
+			public boolean handle(String cmd) {
+
+				return false;
+			}
+		};
 	}
 
 	private void sendThenRead(String msg) {
