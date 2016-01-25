@@ -23,6 +23,13 @@ public class Client {
 
 	private final StringBuilder input = new StringBuilder();
 
+	private interface CommandHandler {
+		boolean handle(String cmd);
+	}
+
+	private CommandHandler currentHandler;
+	protected String name;
+
 	public Client(AsynchronousSocketChannel socket) {
 		this.socket = socket;
 
@@ -37,14 +44,45 @@ public class Client {
 	}
 
 	private void start() {
+		this.currentHandler = new CommandHandler() {
+			@Override
+			public boolean handle(String cmd) {
+				if (!cmd.startsWith("ima ")) {
+					return false;
+				}
+				String name = cmd.substring(4).trim();
+
+				if ("".equals(name)) {
+					return false;
+				}
+
+				Client.this.name = name;
+
+				L.info("client name is " + name);
+
+				sendThenRead("has login " + Client.this.name);
+
+				return true;
+			}
+		};
 		sendThenRead("who");
 	}
 
 	private void sendThenRead(String msg) {
-		sendThenRead(msg, 0);
+		sendThenDo(msg, new Runnable() {
+
+			@Override
+			public void run() {
+				read();
+			}
+		});
 	}
 
-	private void sendThenRead(String msg, int pos) {
+	private void sendThenDo(String msg, Runnable action) {
+		sendThenDo(msg, 0, action);
+	}
+
+	private void sendThenDo(String msg, int pos, Runnable action) {
 		int end = Math.min(msg.length(), pos + cbuf.remaining());
 
 		cbuf.put(msg, pos, end);
@@ -52,14 +90,14 @@ public class Client {
 		if (end == msg.length() && cbuf.hasRemaining()) {
 			cbuf.put('\n');
 			cbuf.flip();
-			sendThenRead();
+			sendThenDo(action);
 		} else {
 			cbuf.flip();
-			sendAndKeepSending(msg, end);
+			keepSendingThenDo(msg, end, action);
 		}
 	}
 
-	private void sendAndKeepSending(final String msg, final int pos) {
+	private void keepSendingThenDo(final String msg, final int pos, final Runnable action) {
 		CoderResult r = e.encode(cbuf, buf, false);
 		buf.flip();
 		if (r.isUnderflow()) {
@@ -70,44 +108,39 @@ public class Client {
 		send(new Runnable() {
 			@Override
 			public void run() {
-				sendThenRead(msg, pos);
+				sendThenDo(msg, pos, action);
 			}
 		});
 	}
 
-	private void sendThenRead() {
+	private void sendThenDo(final Runnable action) {
 		CoderResult r = e.encode(cbuf, buf, true);
 		if (r.isUnderflow()) {
 			cbuf.clear();
-			flushThenRead();
+			flushThenDo(action);
 		} else {
 			buf.flip();
 			send(new Runnable() {
 				@Override
 				public void run() {
-					sendThenRead();
+					sendThenDo(action);
 				}
 			});
 		}
 	}
 
-	private void flushThenRead() {
+	private void flushThenDo(final Runnable action) {
 		CoderResult r = e.flush(buf);
 		buf.flip();
 		if (r.isUnderflow()) {
 			e.reset();
-			send(new Runnable() {
-				@Override
-				public void run() {
-					read();
-				}
-			});
+			send(action);
 		} else {
 			send(new Runnable() {
 
 				@Override
 				public void run() {
-					flushThenRead();
+					flushThenDo(action);
 				}
 
 			});
@@ -181,8 +214,26 @@ public class Client {
 	}
 
 	private void onData(String data) {
-		L.info("client name is " + data);
+		if (currentHandler == null) {
+			sendError();
+		}
+		if (!currentHandler.handle(data)) {
+			sendError();
+		}
+	}
 
-		sendThenRead("has login " + data);
+	private void sendError() {
+		sendThenDo("err", new Runnable() {
+
+			@Override
+			public void run() {
+				try {
+					socket.close();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+		});
 	}
 }
