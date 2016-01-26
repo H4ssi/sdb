@@ -2,10 +2,11 @@ package at.floating_integer.sdb.command;
 
 public class ImaCommand extends Command {
 
+	private static final String NAME = "ima";
 	private final String userName;
 
 	public ImaCommand(String userName) {
-		super("ima");
+		super(NAME);
 		this.userName = userName;
 	}
 
@@ -13,17 +14,20 @@ public class ImaCommand extends Command {
 		return userName;
 	}
 
-	public static ImaCommand parse(String cmdLine) {
-		if (!cmdLine.startsWith("ima ")) {
-			return null;
+	static class ImaCommandParser extends CommandParser {
+
+		public ImaCommandParser() {
+			super(NAME);
 		}
 
-		String name = cmdLine.substring(4).trim();
-
-		if ("".equals(name)) {
-			return null;
+		@Override
+		protected ImaCommand parse(Tokens argTokens) {
+			return new ImaCommand(argTokens.parse(new TokenParser<String>() {
+				@Override
+				public String parseToken(String token) {
+					return token;
+				}
+			}));
 		}
-
-		return new ImaCommand(name);
 	}
 }
