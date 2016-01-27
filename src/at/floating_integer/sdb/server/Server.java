@@ -25,7 +25,7 @@ public class Server {
 			@Override
 			public void completed(AsynchronousSocketChannel result, Void attachment) {
 				accept(serverSocket);
-				new Client(result);
+				new ClientConnection(result);
 			}
 
 			@Override

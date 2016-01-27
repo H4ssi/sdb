@@ -14,7 +14,7 @@ import java.util.logging.Logger;
 import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.ImaCommand;
 
-public class Client {
+public class ClientConnection {
 	private static final Logger L = Logger.getAnonymousLogger();
 	private final AsynchronousSocketChannel socket;
 
@@ -33,7 +33,7 @@ public class Client {
 	private CommandHandler currentHandler;
 	protected String name;
 
-	public Client(AsynchronousSocketChannel socket) {
+	public ClientConnection(AsynchronousSocketChannel socket) {
 		this.socket = socket;
 
 		try {
