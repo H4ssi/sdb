@@ -37,7 +37,7 @@ public class Command {
 			return parser.parseToken(tokens[i++]);
 		}
 
-		public void end() {
+		public void end() { // TODO handle to few args as well
 			if (i != tokens.length) {
 				throw new IllegalStateException("arg tokens left");
 			}
