@@ -9,12 +9,11 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
-import at.floating_integer.sdb.command.Command;
-import at.floating_integer.sdb.command.ImaCommand;
-
-public class ClientConnection {
+public class ClientConnection implements Connection {
 	private static final Logger L = Logger.getAnonymousLogger();
 	private final AsynchronousSocketChannel socket;
 
@@ -26,13 +25,6 @@ public class ClientConnection {
 
 	private final StringBuilder input = new StringBuilder();
 
-	private interface CommandHandler {
-		boolean handle(String cmd);
-	}
-
-	private CommandHandler currentHandler;
-	protected String name;
-
 	public ClientConnection(AsynchronousSocketChannel socket) {
 		this.socket = socket;
 
@@ -42,60 +34,13 @@ public class ClientConnection {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-
-		start();
 	}
 
-	private void start() {
-		this.currentHandler = new CommandHandler() {
-			@Override
-			public boolean handle(String cmd) {
-
-				Command c = Command.parse(cmd);
-
-				if (!(c instanceof ImaCommand)) {
-					return false;
-				}
-
-				name = ((ImaCommand) c).getUserName();
-				L.info("client name is " + name);
-
-				installDefaultHandler();
-
-				sendThenRead("has login " + name);
-
-				return true;
-			}
-		};
-		sendThenRead("who");
+	private void send(String msg) {
+		copyIntoBuf(msg, 0);
 	}
 
-	private void installDefaultHandler() {
-		this.currentHandler = new CommandHandler() {
-
-			@Override
-			public boolean handle(String cmd) {
-
-				return false;
-			}
-		};
-	}
-
-	private void sendThenRead(String msg) {
-		sendThenDo(msg, new Runnable() {
-
-			@Override
-			public void run() {
-				read();
-			}
-		});
-	}
-
-	private void sendThenDo(String msg, Runnable action) {
-		sendThenDo(msg, 0, action);
-	}
-
-	private void sendThenDo(String msg, int pos, Runnable action) {
+	private void copyIntoBuf(String msg, int pos) {
 		int end = Math.min(msg.length(), pos + cbuf.remaining());
 
 		cbuf.put(msg, pos, end);
@@ -103,14 +48,14 @@ public class ClientConnection {
 		if (end == msg.length() && cbuf.hasRemaining()) {
 			cbuf.put('\n');
 			cbuf.flip();
-			sendThenDo(action);
+			encodeEnd();
 		} else {
 			cbuf.flip();
-			keepSendingThenDo(msg, end, action);
+			encodePartAndContinueCopying(msg, end);
 		}
 	}
 
-	private void keepSendingThenDo(final String msg, final int pos, final Runnable action) {
+	private void encodePartAndContinueCopying(final String msg, final int pos) {
 		CoderResult r = e.encode(cbuf, buf, false);
 		buf.flip();
 		if (r.isUnderflow()) {
@@ -121,41 +66,44 @@ public class ClientConnection {
 		send(new Runnable() {
 			@Override
 			public void run() {
-				sendThenDo(msg, pos, action);
+				copyIntoBuf(msg, pos);
 			}
 		});
 	}
 
-	private void sendThenDo(final Runnable action) {
+	private void encodeEnd() {
 		CoderResult r = e.encode(cbuf, buf, true);
 		if (r.isUnderflow()) {
 			cbuf.clear();
-			flushThenDo(action);
+			flushEncoder();
 		} else {
 			buf.flip();
 			send(new Runnable() {
 				@Override
 				public void run() {
-					sendThenDo(action);
+					encodeEnd();
 				}
 			});
 		}
 	}
 
-	private void flushThenDo(final Runnable action) {
+	private void flushEncoder() {
 		CoderResult r = e.flush(buf);
 		buf.flip();
 		if (r.isUnderflow()) {
 			e.reset();
-			send(action);
-		} else {
 			send(new Runnable() {
-
 				@Override
 				public void run() {
-					flushThenDo(action);
+					continueQueue();
 				}
-
+			});
+		} else {
+			send(new Runnable() {
+				@Override
+				public void run() {
+					flushEncoder();
+				}
 			});
 		}
 	}
@@ -221,32 +169,77 @@ public class ClientConnection {
 			return;
 		}
 
-		onData(input.substring(0, pos));
+		current.read(input.substring(0, pos)); // TODO assert not null
 
 		input.delete(0, pos + 1);
+
+		continueQueue();
 	}
 
-	private void onData(String data) {
-		if (currentHandler == null) {
-			sendError();
-		}
-		if (!currentHandler.handle(data)) {
-			sendError();
-		}
-	}
+	private Connection.Read current;
 
-	private void sendError() {
-		sendThenDo("err", new Runnable() {
+	private final ConcurrentLinkedDeque<Runnable> ops = new ConcurrentLinkedDeque<>();
 
+	@Override
+	public void enqueueClose() {
+		enqueue(new Runnable() {
 			@Override
 			public void run() {
 				try {
 					socket.close();
+					continueQueue();
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
 		});
+	}
+
+	@Override
+	public void enqueueRead(final Read read) {
+		// TODO Auto-generated method stub
+		enqueue(new Runnable() {
+			@Override
+			public void run() {
+				current = read;
+				read();
+			}
+		});
+	}
+
+	@Override
+	public void enqueueWrite(final String msg) {
+		enqueue(new Runnable() {
+			@Override
+			public void run() {
+				send(msg);
+			}
+		});
+	}
+
+	private AtomicBoolean processing = new AtomicBoolean(false);
+
+	private void enqueue(Runnable runnable) {
+		ops.push(runnable);
+		processQueue();
+	}
+
+	private void continueQueue() {
+		processing.set(false); // TODO assert true
+		processQueue();
+	}
+
+	private void processQueue() {
+		if (processing.compareAndSet(false, true)) {
+			Runnable next = ops.pollLast();
+
+			if (next == null) {
+				processing.set(false);
+				return;
+			}
+
+			next.run();
+		}
 	}
 }
