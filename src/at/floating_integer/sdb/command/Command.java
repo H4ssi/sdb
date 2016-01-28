@@ -34,10 +34,13 @@ public class Command {
 
 		@Override
 		public <T> T parse(TokenParser<T> parser) {
+			if (i == tokens.length) {
+				throw new IllegalStateException("too few args");
+			}
 			return parser.parseToken(tokens[i++]);
 		}
 
-		public void end() { // TODO handle to few args as well
+		public void end() { // TODO custom exception class
 			if (i != tokens.length) {
 				throw new IllegalStateException("arg tokens left");
 			}
