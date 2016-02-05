@@ -6,7 +6,7 @@ import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.ImaCommand;
 
 public class Client {
-	private static final Logger L = Logger.getAnonymousLogger();
+	private static final Logger L = Logger.getLogger(Client.class.getName());
 
 	private final Connection connection;
 

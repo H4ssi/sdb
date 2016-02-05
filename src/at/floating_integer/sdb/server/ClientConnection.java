@@ -13,7 +13,7 @@ import java.util.LinkedList;
 import java.util.logging.Logger;
 
 public class ClientConnection implements Connection {
-	private static final Logger L = Logger.getAnonymousLogger();
+	private static final Logger L = Logger.getLogger(ClientConnection.class.getName());
 	private final AsynchronousSocketChannel socket;
 
 	private final ByteBuffer buf = ByteBuffer.allocateDirect(1024);

@@ -10,7 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 public class Server {
-	private static final Logger L = Logger.getAnonymousLogger();
+	private static final Logger L = Logger.getLogger(Server.class.getName());
 
 	public Server(int port) throws IOException {
 		AsynchronousServerSocketChannel serverSocket = AsynchronousServerSocketChannel
