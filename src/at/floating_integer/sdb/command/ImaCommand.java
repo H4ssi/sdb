@@ -14,9 +14,9 @@ public class ImaCommand extends Command {
 		return userName;
 	}
 
-	static class ImaCommandParser extends CommandParser {
+	static class Parser extends Command.Parser {
 
-		public ImaCommandParser() {
+		public Parser() {
 			super(NAME);
 		}
 

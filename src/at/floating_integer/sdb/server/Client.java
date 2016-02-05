@@ -2,6 +2,7 @@ package at.floating_integer.sdb.server;
 
 import java.util.logging.Logger;
 
+import at.floating_integer.sdb.command.ByeCommand;
 import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.ImaCommand;
 
@@ -44,12 +45,17 @@ public class Client {
 		connection.enqueueRead(new Connection.Read() {
 			@Override
 			public void read(String msg) {
-				if ("bye".equals(msg.trim())) { // TODO proper command
+				Command c = Command.parse(msg);
+
+				if (c == null) {
+					connection.enqueueWrite("got " + msg);
+				}
+
+				if (c instanceof ByeCommand) {
 					connection.enqueueWrite("bye");
 					connection.enqueueClose();
 					return;
 				}
-				connection.enqueueWrite("got " + msg);
 				requestNextCmd();
 			}
 		});

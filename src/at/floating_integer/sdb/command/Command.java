@@ -47,10 +47,10 @@ public class Command {
 		}
 	}
 
-	abstract static class CommandParser {
+	abstract static class Parser {
 		private final String name;
 
-		public CommandParser(String name) {
+		public Parser(String name) {
 			this.name = name;
 		}
 
@@ -83,12 +83,13 @@ public class Command {
 		protected abstract Command parse(Tokens argTokens);
 	}
 
-	private static Map<String, CommandParser> PARSERS = new HashMap<String, CommandParser>() {
+	private static Map<String, Parser> PARSERS = new HashMap<String, Parser>() {
 		{
-			put(new ImaCommand.ImaCommandParser());
+			put(new ImaCommand.Parser());
+			put(new ByeCommand.Parser());
 		}
 
-		void put(CommandParser parser) {
+		void put(Parser parser) {
 			put(parser.getName(), parser);
 		}
 
@@ -100,7 +101,7 @@ public class Command {
 		if (tokens.length == 0) {
 			return null;
 		}
-		CommandParser p = PARSERS.get(tokens[0]);
+		Parser p = PARSERS.get(tokens[0]);
 		if (p == null) {
 			return null;
 		}
