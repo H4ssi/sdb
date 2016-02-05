@@ -2,16 +2,19 @@ package at.floating_integer.sdb.server;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousChannelGroup;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 public class Server {
 	private static final Logger L = Logger.getAnonymousLogger();
 
 	public Server(int port) throws IOException {
-		AsynchronousServerSocketChannel serverSocket = AsynchronousServerSocketChannel.open();
+		AsynchronousServerSocketChannel serverSocket = AsynchronousServerSocketChannel
+				.open(AsynchronousChannelGroup.withFixedThreadPool(1, Executors.defaultThreadFactory()));
 
 		serverSocket.bind(new InetSocketAddress(port));
 

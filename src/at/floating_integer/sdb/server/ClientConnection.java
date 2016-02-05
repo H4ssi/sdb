@@ -9,8 +9,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.LinkedList;
 import java.util.logging.Logger;
 
 public class ClientConnection implements Connection {
@@ -178,7 +177,7 @@ public class ClientConnection implements Connection {
 
 	private Connection.Read current;
 
-	private final ConcurrentLinkedDeque<Runnable> ops = new ConcurrentLinkedDeque<>();
+	private final LinkedList<Runnable> ops = new LinkedList<>();
 
 	@Override
 	public void enqueueClose() {
@@ -218,27 +217,22 @@ public class ClientConnection implements Connection {
 		});
 	}
 
-	private AtomicBoolean processing = new AtomicBoolean(false);
+	private boolean processing = false;
 
 	private void enqueue(Runnable runnable) {
-		ops.push(runnable);
-		processQueue();
+		ops.addLast(runnable);
+		if (!processing) {
+			continueQueue();
+		}
 	}
 
 	private void continueQueue() {
-		processing.set(false); // TODO assert true
-		processQueue();
-	}
-
-	private void processQueue() {
-		if (processing.compareAndSet(false, true)) {
-			Runnable next = ops.pollLast();
-
-			if (next == null) {
-				processing.set(false);
-				return;
-			}
-
+		Runnable next = ops.pollFirst();
+		if (next == null) {
+			processing = false;
+			return;
+		} else {
+			processing = true;
 			next.run();
 		}
 	}
