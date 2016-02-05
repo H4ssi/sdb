@@ -22,12 +22,9 @@ public class ImaCommand extends Command {
 
 		@Override
 		protected ImaCommand parse(Tokens argTokens) {
-			return new ImaCommand(argTokens.parse(new TokenParser<String>() {
-				@Override
-				public String parseToken(String token) {
-					return token;
-				}
-			}));
+			String userName = argTokens.parse(Tokens.ANY);
+
+			return new ImaCommand(userName);
 		}
 	}
 }

@@ -4,6 +4,7 @@ import java.util.logging.Logger;
 
 import at.floating_integer.sdb.command.ByeCommand;
 import at.floating_integer.sdb.command.Command;
+import at.floating_integer.sdb.command.GetCommand;
 import at.floating_integer.sdb.command.ImaCommand;
 
 public class Client {
@@ -48,6 +49,7 @@ public class Client {
 				Command c = Command.parse(msg);
 
 				if (c == null) {
+					// TODO raise error
 					connection.enqueueWrite("got " + msg);
 				}
 
@@ -55,6 +57,11 @@ public class Client {
 					connection.enqueueWrite("bye");
 					connection.enqueueClose();
 					return;
+				}
+
+				if (c instanceof GetCommand) {
+					String key = ((GetCommand) c).getKey();
+					connection.enqueueWrite("has " + key + " default");
 				}
 				requestNextCmd();
 			}

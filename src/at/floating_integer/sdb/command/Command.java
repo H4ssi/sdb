@@ -21,6 +21,13 @@ public class Command {
 
 	interface Tokens {
 		<T> T parse(TokenParser<T> parser);
+
+		static final TokenParser<String> ANY = new TokenParser<String>() {
+			@Override
+			public String parseToken(String token) {
+				return token;
+			}
+		};
 	}
 
 	private static class TokensImpl implements Tokens {
@@ -87,6 +94,7 @@ public class Command {
 		{
 			put(new ImaCommand.Parser());
 			put(new ByeCommand.Parser());
+			put(new GetCommand.Parser());
 		}
 
 		void put(Parser parser) {
