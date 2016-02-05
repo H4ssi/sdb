@@ -7,17 +7,21 @@ import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.GetCommand;
 import at.floating_integer.sdb.command.ImaCommand;
 import at.floating_integer.sdb.command.PutCommand;
+import at.floating_integer.sdb.data.Database;
+import at.floating_integer.sdb.data.Record;
 
 public class Client {
 	private static final Logger L = Logger.getLogger(Client.class.getName());
 
 	private final Connection connection;
+	private final Database database;
 
 	private String name;
 
-	public Client(Connection connection) {
+	public Client(Connection connection, Database database) {
 		super();
 		this.connection = connection;
+		this.database = database;
 		start();
 	}
 
@@ -43,8 +47,6 @@ public class Client {
 		});
 	}
 
-	private String tmp = "default";
-
 	private void requestNextCmd() {
 		connection.enqueueRead(new Connection.Read() {
 			@Override
@@ -64,14 +66,20 @@ public class Client {
 
 				if (c instanceof GetCommand) {
 					String key = ((GetCommand) c).getKey();
-					connection.enqueueWrite("has " + key + " " + tmp);
+					Record rec = database.get(key);
+					if (rec == null) {
+						connection.enqueueWrite("nil");
+					} else {
+						connection.enqueueWrite("has " + key + " " + rec);
+					}
 				}
 
 				if (c instanceof PutCommand) {
 					String key = ((PutCommand) c).getKey();
 					String data = ((PutCommand) c).getData();
-					tmp = data;
-					connection.enqueueWrite("has " + key + " " + tmp);
+					Record rec = new Record(name, data);
+					database.put(key, rec);
+					connection.enqueueWrite("has " + key + " " + rec);
 				}
 				requestNextCmd();
 			}

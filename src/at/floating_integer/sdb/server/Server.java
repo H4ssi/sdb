@@ -10,6 +10,8 @@ import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import at.floating_integer.sdb.data.Database;
+
 public class Server {
 	private static final Logger L = Logger.getLogger(Server.class.getName());
 
@@ -17,6 +19,8 @@ public class Server {
 			.withFixedThreadPool(1, Executors.defaultThreadFactory());
 
 	private final AsynchronousServerSocketChannel serverSocket;
+
+	private final Database database = new Database();
 
 	public Server(int port) throws IOException {
 		serverSocket = AsynchronousServerSocketChannel.open(group);
@@ -33,7 +37,7 @@ public class Server {
 			@Override
 			public void completed(AsynchronousSocketChannel result, Void attachment) {
 				accept();
-				new Client(new ClientConnection(result));
+				new Client(new ClientConnection(result), database);
 			}
 
 			@Override
