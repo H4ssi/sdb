@@ -2,6 +2,7 @@ package at.floating_integer.sdb.command;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Command {
@@ -22,6 +23,8 @@ public class Command {
 	interface Tokens {
 		<T> T parse(TokenParser<T> parser);
 
+		String slurp();
+
 		static final TokenParser<String> ANY = new TokenParser<String>() {
 			@Override
 			public String parseToken(String token) {
@@ -31,24 +34,38 @@ public class Command {
 	}
 
 	private static class TokensImpl implements Tokens {
-		private final String[] tokens;
+		private final Matcher m;
 		private int i = 0;
 
-		public TokensImpl(String[] tokens) {
+		public TokensImpl(Matcher m) {
 			super();
-			this.tokens = tokens;
+			this.m = m;
 		}
 
 		@Override
 		public <T> T parse(TokenParser<T> parser) {
-			if (i == tokens.length) {
+			if (m.hitEnd() || !m.find()) {
 				throw new IllegalStateException("too few args");
 			}
-			return parser.parseToken(tokens[i++]);
+			return parser.parseToken(m.group(0));
+		}
+
+		@Override
+		public String slurp() {
+			if (m.hitEnd()) {
+				throw new IllegalStateException("nothing left to slurp");
+			}
+			m.usePattern(SLURP);
+			if (m.find()) {
+				return m.group(SLURP_GROUP);
+			} else {
+				return "";
+			}
 		}
 
 		public void end() { // TODO custom exception class
-			if (i != tokens.length) {
+			m.usePattern(TOKEN);
+			if (m.find()) {
 				throw new IllegalStateException("arg tokens left");
 			}
 		}
@@ -65,24 +82,13 @@ public class Command {
 			return name;
 		}
 
-		public Command parse(String[] tokens) {
+		public Command parse(Matcher m) {
 
-			TokensImpl ts = new TokensImpl(tokens);
+			TokensImpl tokens = new TokensImpl(m);
 
-			ts.parse(new TokenParser<Void>() {
+			Command command = parse(tokens);
 
-				@Override
-				public Void parseToken(String token) {
-					if (!name.equals(token)) {
-						throw new IllegalArgumentException("cannot parse");
-					}
-					return null;
-				}
-			});
-
-			Command command = parse(ts);
-
-			ts.end();
+			tokens.end();
 
 			return command;
 		}
@@ -95,6 +101,7 @@ public class Command {
 			put(new ImaCommand.Parser());
 			put(new ByeCommand.Parser());
 			put(new GetCommand.Parser());
+			put(new PutCommand.Parser());
 		}
 
 		void put(Parser parser) {
@@ -105,21 +112,20 @@ public class Command {
 	};
 
 	public static Command parse(String cmdLine) {
-		String[] tokens = splitTokens(cmdLine);
-		if (tokens.length == 0) {
+		Matcher m = TOKEN.matcher(cmdLine);
+
+		if (!m.find()) {
 			return null;
 		}
-		Parser p = PARSERS.get(tokens[0]);
+		Parser p = PARSERS.get(m.group(TOKEN_GROUP));
 		if (p == null) {
 			return null;
 		}
-		return p.parse(tokens);
-
+		return p.parse(m);
 	}
 
-	private static final Pattern WHITESPACE = Pattern.compile("\\s+");
-
-	static String[] splitTokens(String cmdLine) {
-		return WHITESPACE.split(cmdLine);
-	}
+	private static final Pattern TOKEN = Pattern.compile("\\S+");
+	private static final int TOKEN_GROUP = 0;
+	private static final Pattern SLURP = Pattern.compile("\\s(.*)$");
+	private static final int SLURP_GROUP = 1;
 }

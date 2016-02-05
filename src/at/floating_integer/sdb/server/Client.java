@@ -6,6 +6,7 @@ import at.floating_integer.sdb.command.ByeCommand;
 import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.GetCommand;
 import at.floating_integer.sdb.command.ImaCommand;
+import at.floating_integer.sdb.command.PutCommand;
 
 public class Client {
 	private static final Logger L = Logger.getLogger(Client.class.getName());
@@ -42,6 +43,8 @@ public class Client {
 		});
 	}
 
+	private String tmp = "default";
+
 	private void requestNextCmd() {
 		connection.enqueueRead(new Connection.Read() {
 			@Override
@@ -61,7 +64,14 @@ public class Client {
 
 				if (c instanceof GetCommand) {
 					String key = ((GetCommand) c).getKey();
-					connection.enqueueWrite("has " + key + " default");
+					connection.enqueueWrite("has " + key + " " + tmp);
+				}
+
+				if (c instanceof PutCommand) {
+					String key = ((PutCommand) c).getKey();
+					String data = ((PutCommand) c).getData();
+					tmp = data;
+					connection.enqueueWrite("has " + key + " " + tmp);
 				}
 				requestNextCmd();
 			}
