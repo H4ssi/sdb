@@ -24,6 +24,7 @@ import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.GetCommand;
 import at.floating_integer.sdb.command.ImaCommand;
 import at.floating_integer.sdb.command.PutCommand;
+import at.floating_integer.sdb.command.SubCommand;
 import at.floating_integer.sdb.data.Database;
 import at.floating_integer.sdb.data.Record;
 
@@ -98,10 +99,17 @@ public class Client {
 					database.put(key, rec);
 					connection.enqueueWrite("has " + key + " " + rec);
 				}
+
+				if (c instanceof SubCommand) {
+					String key = ((SubCommand) c).getKey();
+
+					// TODO subscribe to key
+					connection.enqueueWrite("tbd sub " + key);
+				}
 				requestNextCmd();
 			}
 		});
-		// TODO implement
+		// TODO implement all commands properly
 	}
 
 	private void error() {

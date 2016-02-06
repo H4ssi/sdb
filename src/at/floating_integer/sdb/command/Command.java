@@ -52,7 +52,6 @@ public class Command {
 
 	private static class TokensImpl implements Tokens {
 		private final Matcher m;
-		private int i = 0;
 
 		public TokensImpl(Matcher m) {
 			super();
@@ -119,6 +118,7 @@ public class Command {
 			put(new ByeCommand.Parser());
 			put(new GetCommand.Parser());
 			put(new PutCommand.Parser());
+			put(new SubCommand.Parser());
 		}
 
 		void put(Parser parser) {
