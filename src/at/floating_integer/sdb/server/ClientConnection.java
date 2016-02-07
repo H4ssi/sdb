@@ -27,19 +27,14 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
 import java.util.LinkedList;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class ClientConnection implements Connection {
+	private static final int BUF_SIZE = 128;
+
 	private static final Logger L = Logger.getLogger(ClientConnection.class.getName());
 	private final AsynchronousSocketChannel socket;
-
-	private final ByteBuffer buf = ByteBuffer.allocateDirect(1024);
-	private final CharBuffer cbuf = CharBuffer.allocate(1024);
-
-	private final CharsetEncoder e = Charset.forName("UTF-8").newEncoder();
-	private final CharsetDecoder d = Charset.forName("UTF-8").newDecoder();
-
-	private final StringBuilder input = new StringBuilder();
 
 	public ClientConnection(AsynchronousSocketChannel socket) {
 		this.socket = socket;
@@ -52,205 +47,220 @@ public class ClientConnection implements Connection {
 		}
 	}
 
-	private void send(String msg) {
-		copyIntoBuf(msg, 0);
-	}
+	private abstract class Queue<T> {
+		private final LinkedList<T> queue = new LinkedList<>();
 
-	private void copyIntoBuf(String msg, int pos) {
-		int end = Math.min(msg.length(), pos + cbuf.remaining());
+		private boolean active = false;
 
-		cbuf.put(msg, pos, end);
+		private Runnable closing;
 
-		if (end == msg.length() && cbuf.hasRemaining()) {
-			cbuf.put('\n');
-			cbuf.flip();
-			encodeEnd();
-		} else {
-			cbuf.flip();
-			encodePartAndContinueCopying(msg, end);
-		}
-	}
-
-	private void encodePartAndContinueCopying(final String msg, final int pos) {
-		CoderResult r = e.encode(cbuf, buf, false);
-		buf.flip();
-		if (r.isUnderflow()) {
-			cbuf.clear();
-		} else {
-			cbuf.compact();
-		}
-		send(new Runnable() {
-			@Override
-			public void run() {
-				copyIntoBuf(msg, pos);
+		protected void end() {
+			T next = queue.pollFirst();
+			if (next == null) {
+				active = false;
+				if (closing != null) {
+					closing.run();
+				}
+			} else {
+				process(next);
 			}
-		});
+		}
+
+		protected abstract void process(T next);
+
+		public void enqueue(T op) {
+			if (closing != null) {
+				return;
+			}
+			if (!active) {
+				active = true;
+				process(op);
+			} else {
+				queue.addLast(op);
+			}
+		}
+
+		public void close(Runnable onClose) {
+			closing = onClose;
+			if (!active) {
+				onClose.run();
+			}
+		}
 	}
 
-	private void encodeEnd() {
-		CoderResult r = e.encode(cbuf, buf, true);
-		if (r.isUnderflow()) {
-			cbuf.clear();
-			flushEncoder();
-		} else {
-			buf.flip();
-			send(new Runnable() {
+	private class WriteQueue extends Queue<String> {
+		private final CharsetEncoder e = Charset.forName("UTF-8").newEncoder();
+
+		private final ByteBuffer writeBuf = ByteBuffer.allocateDirect(BUF_SIZE);
+
+		@Override
+		protected void process(String next) {
+			encodePart(CharBuffer.wrap(next + "\n"));
+		}
+
+		private void encodePart(final CharBuffer msg) {
+			final CoderResult r = e.encode(msg, writeBuf, false);
+			if (r.isUnderflow()) {
+				encodeEnd(msg);
+			} else {
+				writeBuf.flip();
+				send(new Runnable() {
+					@Override
+					public void run() {
+						encodePart(msg);
+					}
+				});
+			}
+		}
+
+		private void encodeEnd(final CharBuffer msg) {
+			CoderResult r = e.encode(msg, writeBuf, true);
+			if (r.isUnderflow()) {
+				flushEncoder();
+			} else {
+				writeBuf.flip();
+				send(new Runnable() {
+					@Override
+					public void run() {
+						encodeEnd(msg);
+					}
+				});
+			}
+		}
+
+		private void flushEncoder() {
+			CoderResult r = e.flush(writeBuf);
+			writeBuf.flip();
+			if (r.isUnderflow()) {
+				e.reset();
+				send(new Runnable() {
+					@Override
+					public void run() {
+						end();
+					}
+				});
+			} else {
+				send(new Runnable() {
+					@Override
+					public void run() {
+						flushEncoder();
+					}
+				});
+			}
+		}
+
+		private void send(final Runnable then) {
+			socket.write(writeBuf, null, new CompletionHandler<Integer, Void>() {
 				@Override
-				public void run() {
-					encodeEnd();
+				public void completed(Integer result, Void attachment) {
+					if (writeBuf.remaining() == 0) {
+						writeBuf.clear();
+						then.run();
+					} else {
+						send(then);
+					}
+				}
+
+				@Override
+				public void failed(Throwable exc, Void attachment) {
+					// TODO Auto-generated method stub
 				}
 			});
 		}
 	}
 
-	private void flushEncoder() {
-		CoderResult r = e.flush(buf);
-		buf.flip();
-		if (r.isUnderflow()) {
-			e.reset();
-			send(new Runnable() {
+	private class ReadQueue extends Queue<Connection.Read> {
+		private final CharsetDecoder d = Charset.forName("UTF-8").newDecoder();
+
+		private final ByteBuffer readBuf = ByteBuffer.allocateDirect(BUF_SIZE);
+		private final CharBuffer cbuf = CharBuffer.allocate((int) Math.ceil(d.maxCharsPerByte() * BUF_SIZE));
+
+		private final StringBuilder input = new StringBuilder();
+
+		@Override
+		protected void process(Read next) {
+			testForInput(next);
+		}
+
+		private void testForInput(Read next) {
+			int pos = input.indexOf("\n");
+
+			if (pos == -1) {
+				read(next);
+				return;
+			}
+
+			next.read(input.substring(0, pos));
+
+			input.delete(0, pos + 1);
+
+			end();
+		}
+
+		private void read(final Read next) {
+			socket.read(readBuf, null, new CompletionHandler<Integer, Void>() {
 				@Override
-				public void run() {
-					continueQueue();
+				public void completed(Integer result, Void attachment) {
+					readBuf.flip();
+					parseMessage(next);
+				}
+
+				@Override
+				public void failed(Throwable exc, Void attachment) {
+					// TODO Auto-generated method stub
 				}
 			});
-		} else {
-			send(new Runnable() {
-				@Override
-				public void run() {
-					flushEncoder();
+		}
+
+		private void parseMessage(Read next) {
+			while (true) {
+				CoderResult r = d.decode(readBuf, cbuf, false);
+				cbuf.flip();
+
+				input.append(cbuf.toString());
+				cbuf.clear();
+
+				if (r.isOverflow()) {
+					continue;
 				}
-			});
+
+				readBuf.compact();
+				testForInput(next);
+
+				return;
+			}
 		}
 	}
 
-	private void send(final Runnable then) {
-		socket.write(buf, null, new CompletionHandler<Integer, Void>() {
-			@Override
-			public void completed(Integer result, Void attachment) {
-				if (buf.remaining() == 0) {
-					buf.clear();
-					then.run();
-				} else {
-					send(then);
-				}
-			}
-
-			@Override
-			public void failed(Throwable exc, Void attachment) {
-				// TODO Auto-generated method stub
-			}
-		});
-	}
-
-	private void read() {
-		socket.read(buf, null, new CompletionHandler<Integer, Void>() {
-			@Override
-			public void completed(Integer result, Void attachment) {
-				buf.flip();
-				parseMessage();
-			}
-
-			@Override
-			public void failed(Throwable exc, Void attachment) {
-				// TODO Auto-generated method stub
-			}
-		});
-	}
-
-	private void parseMessage() {
-		while (true) {
-			CoderResult r = d.decode(buf, cbuf, false);
-			cbuf.flip();
-
-			input.append(cbuf.toString());
-			cbuf.clear();
-
-			if (r.isOverflow()) {
-				continue;
-			}
-
-			buf.compact();
-			testForInput();
-
-			return;
-		}
-	}
-
-	private void testForInput() {
-		int pos = input.indexOf("\n");
-
-		if (pos == -1) {
-			read();
-			return;
-		}
-
-		current.read(input.substring(0, pos)); // TODO assert not null
-
-		input.delete(0, pos + 1);
-
-		continueQueue();
-	}
-
-	private Connection.Read current;
-
-	private final LinkedList<Runnable> ops = new LinkedList<>();
+	private final WriteQueue writes = new WriteQueue();
+	private final ReadQueue reads = new ReadQueue();
 
 	@Override
 	public void enqueueClose() {
-		enqueue(new Runnable() {
+		writes.close(new Runnable() {
 			@Override
 			public void run() {
-				try {
-					socket.close();
-					continueQueue();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
+				reads.close(new Runnable() {
+					@Override
+					public void run() {
+						try {
+							socket.close();
+						} catch (IOException e) {
+							L.log(Level.WARNING, "error closing channel", socket);
+						}
+					}
+				});
 			}
 		});
 	}
 
 	@Override
 	public void enqueueRead(final Read read) {
-		// TODO Auto-generated method stub
-		enqueue(new Runnable() {
-			@Override
-			public void run() {
-				current = read;
-				read();
-			}
-		});
+		reads.enqueue(read);
 	}
 
 	@Override
 	public void enqueueWrite(final String msg) {
-		enqueue(new Runnable() {
-			@Override
-			public void run() {
-				send(msg);
-			}
-		});
-	}
-
-	private boolean processing = false;
-
-	private void enqueue(Runnable runnable) {
-		ops.addLast(runnable);
-		if (!processing) {
-			continueQueue();
-		}
-	}
-
-	private void continueQueue() {
-		Runnable next = ops.pollFirst();
-		if (next == null) {
-			processing = false;
-			return;
-		} else {
-			processing = true;
-			next.run();
-		}
+		writes.enqueue(msg);
 	}
 }
