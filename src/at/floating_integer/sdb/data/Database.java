@@ -23,8 +23,15 @@ import java.util.Map;
 public class Database {
 	private Map<String, Record> records = new HashMap<>();
 
+	private final Subscriptions subscriptions;
+
+	public Database(Subscriptions subscriptions) {
+		this.subscriptions = subscriptions;
+	}
+
 	public void put(String key, Record record) {
 		records.put(key, record);
+		subscriptions.recordPut(key, record);
 	}
 
 	public Record get(String key) {

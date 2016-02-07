@@ -27,19 +27,22 @@ import at.floating_integer.sdb.command.PutCommand;
 import at.floating_integer.sdb.command.SubCommand;
 import at.floating_integer.sdb.data.Database;
 import at.floating_integer.sdb.data.Record;
+import at.floating_integer.sdb.data.Subscriptions;
 
 public class Client {
 	private static final Logger L = Logger.getLogger(Client.class.getName());
 
 	private final Connection connection;
 	private final Database database;
+	private final Subscriptions subscriptions;
 
 	private String name;
 
-	public Client(Connection connection, Database database) {
+	public Client(Connection connection, Database database, Subscriptions subscriptions) {
 		super();
 		this.connection = connection;
 		this.database = database;
+		this.subscriptions = subscriptions;
 		start();
 	}
 
@@ -71,6 +74,10 @@ public class Client {
 			public void read(String msg) {
 				Command c = Command.parse(msg);
 
+				if (subscriptions.unsubscribe(Client.this)) {
+					connection.enqueueWrite("nil");
+				}
+
 				if (c == null) {
 					// TODO raise error
 					connection.enqueueWrite("got " + msg);
@@ -84,12 +91,7 @@ public class Client {
 
 				if (c instanceof GetCommand) {
 					String key = ((GetCommand) c).getKey();
-					Record rec = database.get(key);
-					if (rec == null) {
-						connection.enqueueWrite("nil");
-					} else {
-						connection.enqueueWrite("has " + key + " " + rec);
-					}
+					getRecord(key);
 				}
 
 				if (c instanceof PutCommand) {
@@ -103,10 +105,20 @@ public class Client {
 				if (c instanceof SubCommand) {
 					String key = ((SubCommand) c).getKey();
 
-					// TODO subscribe to key
-					connection.enqueueWrite("tbd sub " + key);
+					subscriptions.subscribe(Client.this, key);
+					getRecord(key);
 				}
+
 				requestNextCmd();
+			}
+
+			private void getRecord(String key) {
+				Record rec = database.get(key);
+				if (rec == null) {
+					connection.enqueueWrite("nil");
+				} else {
+					connection.enqueueWrite("has " + key + " " + rec);
+				}
 			}
 		});
 		// TODO implement all commands properly
@@ -115,5 +127,9 @@ public class Client {
 	private void error() {
 		connection.enqueueWrite("err");
 		connection.enqueueClose();
+	}
+
+	public void recordPut(String key, Record record) {
+		connection.enqueueWrite("has " + key + " " + record);
 	}
 }
