@@ -18,6 +18,7 @@
 package at.floating_integer.sdb.server;
 
 import java.io.IOException;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -36,15 +37,20 @@ public class ClientConnection implements Connection {
 	private static final Logger L = Logger.getLogger(ClientConnection.class.getName());
 	private final AsynchronousSocketChannel socket;
 
+	private final SocketAddress address;
+
 	public ClientConnection(AsynchronousSocketChannel socket) {
 		this.socket = socket;
 
+		SocketAddress address = null;
 		try {
-			L.info("client connected: " + socket.getRemoteAddress());
+			address = socket.getRemoteAddress();
+			L.info("client connected: " + address);
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			L.log(Level.WARNING, "could not get remote address of client", e);
+			// TODO bailout?
 		}
+		this.address = address;
 	}
 
 	private abstract class Queue<T> {
@@ -262,5 +268,10 @@ public class ClientConnection implements Connection {
 	@Override
 	public void enqueueWrite(final String msg) {
 		writes.enqueue(msg);
+	}
+
+	@Override
+	public String toString() {
+		return address.toString();
 	}
 }

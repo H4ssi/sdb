@@ -22,6 +22,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousChannelGroup;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -38,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
@@ -65,6 +67,10 @@ public class Server {
 
 	private static final long STORE_INTERVAL_MILLIS = 10 * 60 * 1000;
 
+	private static final File LOG_FILE = new File("clients.log");
+
+	private final PrintWriter log;
+
 	public Server(int port) throws IOException, JAXBException {
 		database = new Database(subscriptions);
 
@@ -80,6 +86,8 @@ public class Server {
 		serverSocket = AsynchronousServerSocketChannel.open(group);
 
 		serverSocket.bind(new InetSocketAddress(port));
+
+		log = new PrintWriter(new FileOutputStream(LOG_FILE, true), true);
 
 		accept();
 
@@ -119,7 +127,7 @@ public class Server {
 			@Override
 			public void completed(AsynchronousSocketChannel result, Void attachment) {
 				accept();
-				new Client(new ClientConnection(result), database, subscriptions);
+				new Client(new ClientConnection(result), database, subscriptions, log);
 			}
 
 			@Override
@@ -140,6 +148,12 @@ public class Server {
 			}
 			group.shutdownNow();
 			// TODO maybe be more graceful
+			try {
+				group.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+			} catch (InterruptedException e) {
+				L.log(Level.WARNING, "error during waiting for server to shutdown", e);
+			}
+			log.flush();
 		} catch (IOException e) {
 			L.log(Level.WARNING, "Error when shutting down server", e);
 		}

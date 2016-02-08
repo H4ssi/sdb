@@ -17,6 +17,10 @@
  *******************************************************************************/
 package at.floating_integer.sdb.server;
 
+import java.io.PrintWriter;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.logging.Logger;
 
 import at.floating_integer.sdb.command.ByeCommand;
@@ -35,18 +39,22 @@ public class Client {
 	private final Connection connection;
 	private final Database database;
 	private final Subscriptions subscriptions;
+	private final PrintWriter log;
 
 	private String name;
 
-	public Client(Connection connection, Database database, Subscriptions subscriptions) {
+	public Client(Connection connection, Database database, Subscriptions subscriptions, PrintWriter log) {
 		super();
 		this.connection = connection;
 		this.database = database;
 		this.subscriptions = subscriptions;
+		this.log = log;
 		start();
 	}
 
 	private void start() {
+		dblog("con");
+
 		connection.enqueueWrite("who");
 		connection.enqueueRead(new Connection.Read() {
 
@@ -58,6 +66,8 @@ public class Client {
 					error();
 					return;
 				}
+
+				dblog(cmd);
 
 				name = ((ImaCommand) c).getUserName();
 				L.info("client name is " + name);
@@ -76,12 +86,15 @@ public class Client {
 
 				if (subscriptions.unsubscribe(Client.this)) {
 					connection.enqueueWrite("nil");
+					dblog("uns");
 				}
 
 				if (c == null) {
 					// TODO raise error
 					connection.enqueueWrite("got " + msg);
 				}
+
+				dblog(msg);
 
 				if (c instanceof ByeCommand) {
 					connection.enqueueWrite("bye");
@@ -131,5 +144,11 @@ public class Client {
 
 	public void recordPut(String key, Record record) {
 		connection.enqueueWrite("has " + key + " " + record);
+	}
+
+	private static final DateFormat FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+
+	private void dblog(String msg) {
+		log.println(connection + " " + FORMAT.format(new Date()) + " " + msg);
 	}
 }
