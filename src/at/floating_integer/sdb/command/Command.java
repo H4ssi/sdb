@@ -114,7 +114,7 @@ public class Command {
 
 	private static Map<String, Parser> PARSERS = new HashMap<String, Parser>() {
 		{
-			put(new ImaCommand.Parser());
+			put(new IamCommand.Parser());
 			put(new ByeCommand.Parser());
 			put(new GetCommand.Parser());
 			put(new PutCommand.Parser());

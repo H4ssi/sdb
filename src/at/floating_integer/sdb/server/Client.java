@@ -28,7 +28,7 @@ import at.floating_integer.sdb.command.ByeCommand;
 import at.floating_integer.sdb.command.Command;
 import at.floating_integer.sdb.command.Command.ParserException;
 import at.floating_integer.sdb.command.GetCommand;
-import at.floating_integer.sdb.command.ImaCommand;
+import at.floating_integer.sdb.command.IamCommand;
 import at.floating_integer.sdb.command.PutCommand;
 import at.floating_integer.sdb.command.SubCommand;
 import at.floating_integer.sdb.data.Database;
@@ -84,7 +84,7 @@ public class Client {
 						requestLogin();
 						return;
 					}
-					if (!(c instanceof ImaCommand)) {
+					if (!(c instanceof IamCommand)) {
 						error();
 						requestLogin();
 						return;
@@ -92,7 +92,7 @@ public class Client {
 
 					dblog(cmd);
 
-					name = ((ImaCommand) c).getUserName();
+					name = ((IamCommand) c).getUserName();
 					L.info("client name is " + name);
 
 					connection.enqueueWrite("has login " + new Record("system", name));
