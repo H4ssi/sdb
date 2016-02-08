@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.ShutdownChannelGroupException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
@@ -156,22 +157,28 @@ public class ClientConnection implements Connection {
 		}
 
 		private void send(final Runnable then) {
-			socket.write(writeBuf, null, new CompletionHandler<Integer, Void>() {
-				@Override
-				public void completed(Integer result, Void attachment) {
-					if (writeBuf.remaining() == 0) {
-						writeBuf.clear();
-						then.run();
-					} else {
-						send(then);
+			try {
+				socket.write(writeBuf, null, new CompletionHandler<Integer, Void>() {
+					@Override
+					public void completed(Integer result, Void attachment) {
+						if (writeBuf.remaining() == 0) {
+							writeBuf.clear();
+							then.run();
+						} else {
+							send(then);
+						}
 					}
-				}
 
-				@Override
-				public void failed(Throwable exc, Void attachment) {
-					// TODO Auto-generated method stub
-				}
-			});
+					@Override
+					public void failed(Throwable exc, Void attachment) {
+						L.log(Level.WARNING, "error sending", exc);
+						forceClose();
+					}
+				});
+			} catch (ShutdownChannelGroupException e) {
+				L.log(Level.WARNING, "cannot send", e);
+				forceClose();
+			}
 		}
 	}
 
@@ -204,18 +211,24 @@ public class ClientConnection implements Connection {
 		}
 
 		private void read(final Read next) {
-			socket.read(readBuf, null, new CompletionHandler<Integer, Void>() {
-				@Override
-				public void completed(Integer result, Void attachment) {
-					readBuf.flip();
-					parseMessage(next);
-				}
+			try {
+				socket.read(readBuf, null, new CompletionHandler<Integer, Void>() {
+					@Override
+					public void completed(Integer result, Void attachment) {
+						readBuf.flip();
+						parseMessage(next);
+					}
 
-				@Override
-				public void failed(Throwable exc, Void attachment) {
-					// TODO Auto-generated method stub
-				}
-			});
+					@Override
+					public void failed(Throwable exc, Void attachment) {
+						L.log(Level.WARNING, "error reading", exc);
+						forceClose();
+					}
+				});
+			} catch (ShutdownChannelGroupException e) {
+				L.log(Level.WARNING, "cannot read", e);
+				forceClose();
+			}
 		}
 
 		private void parseMessage(Read next) {
@@ -238,6 +251,13 @@ public class ClientConnection implements Connection {
 		}
 	}
 
+	private Runnable onClosed;
+
+	@Override
+	public void onClosed(Runnable onClosed) {
+		this.onClosed = onClosed;
+	}
+
 	private final WriteQueue writes = new WriteQueue();
 	private final ReadQueue reads = new ReadQueue();
 
@@ -249,15 +269,25 @@ public class ClientConnection implements Connection {
 				reads.close(new Runnable() {
 					@Override
 					public void run() {
-						try {
-							socket.close();
-						} catch (IOException e) {
-							L.log(Level.WARNING, "error closing channel", socket);
-						}
+						forceClose();
 					}
 				});
 			}
 		});
+	}
+
+	private void forceClose() {
+		if (socket.isOpen()) {
+			try {
+				socket.close();
+			} catch (IOException e) {
+				L.log(Level.WARNING, "error closing channel", socket);
+			}
+		}
+		if (onClosed != null) {
+			onClosed.run();
+			onClosed = null;
+		}
 	}
 
 	@Override

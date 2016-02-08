@@ -55,6 +55,17 @@ public class Client {
 	private void start() {
 		dblog("con");
 
+		connection.onClosed(new Runnable() {
+			@Override
+			public void run() {
+				if (subscriptions.unsubscribe(Client.this)) {
+					dblog("uns");
+				}
+				dblog("dis");
+				L.info(name + " disconnected.");
+			}
+		});
+
 		connection.enqueueWrite("who");
 		connection.enqueueRead(new Connection.Read() {
 
