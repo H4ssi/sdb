@@ -31,10 +31,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
@@ -60,10 +63,19 @@ public class Server {
 	private final Subscriptions subscriptions = new Subscriptions();
 	private final Database database;
 
+	private static final long STORE_INTERVAL_MILLIS = 10 * 60 * 1000;
+
 	public Server(int port) throws IOException, JAXBException {
 		database = new Database(subscriptions);
 
 		restore();
+
+		new Timer(true).schedule(new TimerTask() {
+			@Override
+			public void run() {
+				submitStore();
+			}
+		}, STORE_INTERVAL_MILLIS, STORE_INTERVAL_MILLIS);
 
 		serverSocket = AsynchronousServerSocketChannel.open(group);
 
@@ -120,22 +132,31 @@ public class Server {
 	public void shutdown() {
 		try {
 			try {
-				executor.submit(new Callable<Void>() {
-					@Override
-					public Void call() throws Exception {
-						store();
-						return null;
-					}
-				}).get();
+				submitStore().get();
 			} catch (InterruptedException e) {
 				L.log(Level.WARNING, "interrupted while waiting for db store", e);
 			} catch (ExecutionException e) {
-				L.log(Level.WARNING, "error during db store", e);
+				L.log(Level.WARNING, "error during final db store", e);
 			}
 			group.shutdownNow();
 			// TODO maybe be more graceful
 		} catch (IOException e) {
 			L.log(Level.WARNING, "Error when shutting down server", e);
 		}
+	}
+
+	private Future<Void> submitStore() {
+		return executor.submit(new Callable<Void>() {
+			@Override
+			public Void call() throws Exception {
+				try {
+					store();
+				} catch (Exception e) {
+					L.log(Level.WARNING, "error during db store", e);
+					throw e;
+				}
+				return null;
+			}
+		});
 	}
 }
