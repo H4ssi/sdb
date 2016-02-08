@@ -21,10 +21,12 @@ import java.io.PrintWriter;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import at.floating_integer.sdb.command.ByeCommand;
 import at.floating_integer.sdb.command.Command;
+import at.floating_integer.sdb.command.Command.ParserException;
 import at.floating_integer.sdb.command.GetCommand;
 import at.floating_integer.sdb.command.ImaCommand;
 import at.floating_integer.sdb.command.PutCommand;
@@ -67,24 +69,38 @@ public class Client {
 		});
 
 		connection.enqueueWrite("who");
+		requestLogin();
+	}
+
+	private void requestLogin() {
 		connection.enqueueRead(new Connection.Read() {
 
 			@Override
 			public void read(String cmd) {
-				Command c = Command.parse(cmd);
+				try {
+					Command c = Command.parse(cmd);
 
-				if (!(c instanceof ImaCommand)) {
+					if (c == null) {
+						requestLogin();
+						return;
+					}
+					if (!(c instanceof ImaCommand)) {
+						error();
+						requestLogin();
+						return;
+					}
+
+					dblog(cmd);
+
+					name = ((ImaCommand) c).getUserName();
+					L.info("client name is " + name);
+
+					connection.enqueueWrite("has login " + new Record("system", name));
+					requestNextCmd();
+				} catch (ParserException e) {
 					error();
-					return;
+					requestLogin();
 				}
-
-				dblog(cmd);
-
-				name = ((ImaCommand) c).getUserName();
-				L.info("client name is " + name);
-
-				connection.enqueueWrite("has login " + name);
-				requestNextCmd();
 			}
 		});
 	}
@@ -93,47 +109,48 @@ public class Client {
 		connection.enqueueRead(new Connection.Read() {
 			@Override
 			public void read(String msg) {
-				Command c = Command.parse(msg);
+				try {
+					try {
+						Command c = Command.parse(msg);
 
-				if (subscriptions.unsubscribe(Client.this)) {
-					connection.enqueueWrite("nil");
-					dblog("uns");
-				}
+						if (c != null) {
+							if (subscriptions.unsubscribe(Client.this)) {
+								connection.enqueueWrite("nil");
+								dblog("uns");
+							}
 
-				if (c == null) {
-					// TODO raise error
-					connection.enqueueWrite("got " + msg);
-				}
+							dblog(msg);
 
-				dblog(msg);
+							if (c instanceof ByeCommand) {
+								connection.enqueueWrite("bye");
+								connection.enqueueClose();
+								return;
+							} else if (c instanceof GetCommand) {
+								String key = ((GetCommand) c).getKey();
+								getRecord(key);
+							} else if (c instanceof PutCommand) {
+								String key = ((PutCommand) c).getKey();
+								String data = ((PutCommand) c).getData();
+								Record rec = new Record(name, data);
+								database.put(key, rec);
+								connection.enqueueWrite("has " + key + " " + rec);
+							} else if (c instanceof SubCommand) {
+								String key = ((SubCommand) c).getKey();
 
-				if (c instanceof ByeCommand) {
-					connection.enqueueWrite("bye");
+								subscriptions.subscribe(Client.this, key);
+								getRecord(key);
+							} else {
+								error();
+							}
+						}
+					} catch (ParserException e) {
+						error();
+					}
+					requestNextCmd();
+				} catch (Exception e) {
+					L.log(Level.WARNING, "unhandled exception during client logic", e);
 					connection.enqueueClose();
-					return;
 				}
-
-				if (c instanceof GetCommand) {
-					String key = ((GetCommand) c).getKey();
-					getRecord(key);
-				}
-
-				if (c instanceof PutCommand) {
-					String key = ((PutCommand) c).getKey();
-					String data = ((PutCommand) c).getData();
-					Record rec = new Record(name, data);
-					database.put(key, rec);
-					connection.enqueueWrite("has " + key + " " + rec);
-				}
-
-				if (c instanceof SubCommand) {
-					String key = ((SubCommand) c).getKey();
-
-					subscriptions.subscribe(Client.this, key);
-					getRecord(key);
-				}
-
-				requestNextCmd();
 			}
 
 			private void getRecord(String key) {
@@ -145,12 +162,10 @@ public class Client {
 				}
 			}
 		});
-		// TODO implement all commands properly
 	}
 
 	private void error() {
 		connection.enqueueWrite("err");
-		connection.enqueueClose();
 	}
 
 	public void recordPut(String key, Record record) {

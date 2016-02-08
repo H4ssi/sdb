@@ -61,7 +61,7 @@ public class Command {
 		@Override
 		public <T> T parse(TokenParser<T> parser) {
 			if (m.hitEnd() || !m.find()) {
-				throw new IllegalStateException("too few args");
+				throw new ParserException("too few args");
 			}
 			return parser.parseToken(m.group(0));
 		}
@@ -69,7 +69,7 @@ public class Command {
 		@Override
 		public String slurp() {
 			if (m.hitEnd()) {
-				throw new IllegalStateException("nothing left to slurp");
+				throw new ParserException("nothing left to slurp");
 			}
 			m.usePattern(SLURP);
 			if (m.find()) {
@@ -79,10 +79,10 @@ public class Command {
 			}
 		}
 
-		public void end() { // TODO custom exception class
+		public void end() {
 			m.usePattern(TOKEN);
 			if (m.find()) {
-				throw new IllegalStateException("arg tokens left");
+				throw new ParserException("arg tokens left");
 			}
 		}
 	}
@@ -128,6 +128,14 @@ public class Command {
 		private static final long serialVersionUID = 1L;
 	};
 
+	public static class ParserException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		public ParserException(String message) {
+			super(message);
+		}
+	}
+
 	public static Command parse(String cmdLine) {
 		Matcher m = TOKEN.matcher(cmdLine);
 
@@ -136,7 +144,7 @@ public class Command {
 		}
 		Parser p = PARSERS.get(m.group(TOKEN_GROUP));
 		if (p == null) {
-			return null;
+			throw new ParserException("Unknown command");
 		}
 		return p.parse(m);
 	}
