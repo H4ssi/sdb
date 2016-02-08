@@ -17,16 +17,28 @@
  *******************************************************************************/
 package at.floating_integer.sdb.data;
 
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.HashMap;
-import java.util.Map;
+
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Marshaller;
+import javax.xml.bind.Unmarshaller;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;
 
 public class Database {
-	private Map<String, Record> records = new HashMap<>();
+	private HashMap<String, Record> records = new HashMap<>();
 
 	private final Subscriptions subscriptions;
 
-	public Database(Subscriptions subscriptions) {
+	public Database(Subscriptions subscriptions) throws JAXBException {
 		this.subscriptions = subscriptions;
+
+		JAXBContext context = JAXBContext.newInstance(HashMap.class, Wrapper.class, Record.class);
+		marshaller = context.createMarshaller();
+		unmarshaller = context.createUnmarshaller();
 	}
 
 	public void put(String key, Record record) {
@@ -36,5 +48,29 @@ public class Database {
 
 	public Record get(String key) {
 		return records.get(key);
+	}
+
+	@XmlRootElement
+	private static class Wrapper {
+		@XmlElement
+		public HashMap<String, Record> records = new HashMap<>();
+	}
+
+	private final Marshaller marshaller;
+	private final Unmarshaller unmarshaller;
+
+	public void store(OutputStream outputStream) throws JAXBException {
+		Wrapper w = new Wrapper();
+		w.records = records;
+		marshaller.marshal(w, outputStream);
+	}
+
+	public void restore(InputStream inputStream) throws JAXBException {
+		Object o = unmarshaller.unmarshal(inputStream);
+		if (!(o instanceof Wrapper)) {
+			throw new RuntimeException("could not load database, given dump does not represent data");
+		}
+		Wrapper w = (Wrapper) o;
+		records = w.records;
 	}
 }

@@ -21,13 +21,27 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
+import javax.xml.bind.annotation.XmlAttribute;
+import javax.xml.bind.annotation.XmlValue;
+
 public class Record {
+	@XmlAttribute
 	private final String author;
-	private final Date datetime = new Date();
+	@XmlAttribute
+	private final Date datetime;
+	@XmlValue
 	private final String data;
+
+	@SuppressWarnings("unused") // for JAXB
+	private Record() {
+		author = null;
+		datetime = null;
+		data = null;
+	}
 
 	public Record(String author, String data) {
 		this.author = author;
+		datetime = new Date();
 		this.data = data;
 	}
 

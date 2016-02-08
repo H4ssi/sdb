@@ -17,15 +17,30 @@
  *******************************************************************************/
 package at.floating_integer.sdb.server;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousChannelGroup;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
+import javax.xml.bind.JAXBException;
 
 import at.floating_integer.sdb.data.Database;
 import at.floating_integer.sdb.data.Subscriptions;
@@ -33,15 +48,23 @@ import at.floating_integer.sdb.data.Subscriptions;
 public class Server {
 	private static final Logger L = Logger.getLogger(Server.class.getName());
 
+	private static final File DATA_FILE = new File("data.xml.gz");
+	private static final File DATA_BACKUP_FILE = new File(DATA_FILE.getPath() + ".bak");
+
+	private final ExecutorService executor = Executors.newFixedThreadPool(1);
 	private final AsynchronousChannelGroup group = AsynchronousChannelGroup //
-			.withFixedThreadPool(1, Executors.defaultThreadFactory());
+			.withThreadPool(executor);
 
 	private final AsynchronousServerSocketChannel serverSocket;
 
 	private final Subscriptions subscriptions = new Subscriptions();
-	private final Database database = new Database(subscriptions);
+	private final Database database;
 
-	public Server(int port) throws IOException {
+	public Server(int port) throws IOException, JAXBException {
+		database = new Database(subscriptions);
+
+		restore();
+
 		serverSocket = AsynchronousServerSocketChannel.open(group);
 
 		serverSocket.bind(new InetSocketAddress(port));
@@ -49,6 +72,34 @@ public class Server {
 		accept();
 
 		L.info("Server started listening on port " + port);
+	}
+
+	private void restore() throws IOException, JAXBException {
+		try (GZIPInputStream is = new GZIPInputStream(new FileInputStream(DATA_FILE))) {
+			L.info("restoring data...");
+			database.restore(is);
+			L.info("data restored");
+		} catch (FileNotFoundException e) {
+			L.info("no data file found, no data restored");
+		}
+	}
+
+	private void store() throws FileNotFoundException, IOException, JAXBException {
+		Path tmp = Files.createTempFile(Paths.get(""), "data.xml.", ".gz.tmp");
+		try (GZIPOutputStream os = new GZIPOutputStream(new FileOutputStream(tmp.toFile()))) {
+			L.info("storing data into " + tmp + "...");
+			database.store(os);
+		}
+		try {
+			if (Files.exists(DATA_FILE.toPath())) {
+				Files.move(DATA_FILE.toPath(), DATA_BACKUP_FILE.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			}
+			Files.move(tmp, DATA_FILE.toPath(), StandardCopyOption.ATOMIC_MOVE);
+			L.info("data stored");
+		} catch (IOException e) {
+			L.log(Level.WARNING, "could not swap data files", e);
+			throw e;
+		}
 	}
 
 	private void accept() {
@@ -68,6 +119,19 @@ public class Server {
 
 	public void shutdown() {
 		try {
+			try {
+				executor.submit(new Callable<Void>() {
+					@Override
+					public Void call() throws Exception {
+						store();
+						return null;
+					}
+				}).get();
+			} catch (InterruptedException e) {
+				L.log(Level.WARNING, "interrupted while waiting for db store", e);
+			} catch (ExecutionException e) {
+				L.log(Level.WARNING, "error during db store", e);
+			}
 			group.shutdownNow();
 			// TODO maybe be more graceful
 		} catch (IOException e) {

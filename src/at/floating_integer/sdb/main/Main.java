@@ -23,11 +23,13 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.xml.bind.JAXBException;
+
 import at.floating_integer.sdb.server.Server;
 
 public class Main {
 
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws IOException, JAXBException {
 		setupLogging();
 
 		Server s = new Server(9999);
