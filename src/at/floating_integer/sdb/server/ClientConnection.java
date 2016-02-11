@@ -107,7 +107,9 @@ public class ClientConnection implements Connection {
 
 		private void encodePart(final CharBuffer msg) {
 			final CoderResult r = e.encode(msg, writeBuf, false);
-			if (r.isUnderflow()) {
+			if (r.isError()) {
+				handleError("error encoding part", null);
+			} else if (r.isUnderflow()) {
 				encodeEnd(msg);
 			} else {
 				writeBuf.flip();
@@ -122,7 +124,9 @@ public class ClientConnection implements Connection {
 
 		private void encodeEnd(final CharBuffer msg) {
 			CoderResult r = e.encode(msg, writeBuf, true);
-			if (r.isUnderflow()) {
+			if (r.isError()) {
+				handleError("error encoding end", null);
+			} else if (r.isUnderflow()) {
 				flushEncoder();
 			} else {
 				writeBuf.flip();
@@ -138,7 +142,9 @@ public class ClientConnection implements Connection {
 		private void flushEncoder() {
 			CoderResult r = e.flush(writeBuf);
 			writeBuf.flip();
-			if (r.isUnderflow()) {
+			if (r.isError()) {
+				handleError("error flushing encoder", null);
+			} else if (r.isUnderflow()) {
 				e.reset();
 				send(new Runnable() {
 					@Override
@@ -171,14 +177,18 @@ public class ClientConnection implements Connection {
 
 					@Override
 					public void failed(Throwable exc, Void attachment) {
-						L.log(Level.WARNING, "error sending", exc);
-						forceClose();
+						handleError("error sending", exc);
 					}
 				});
 			} catch (ShutdownChannelGroupException e) {
-				L.log(Level.WARNING, "cannot send", e);
-				forceClose();
+				handleError("cannot send", e);
 			}
+		}
+
+		private void handleError(String what, Throwable e) {
+			L.log(Level.WARNING, what, e);
+			writeBuf.clear();
+			forceClose();
 		}
 	}
 
@@ -221,13 +231,11 @@ public class ClientConnection implements Connection {
 
 					@Override
 					public void failed(Throwable exc, Void attachment) {
-						L.log(Level.WARNING, "error reading", exc);
-						forceClose();
+						handleError("error reading", exc);
 					}
 				});
 			} catch (ShutdownChannelGroupException e) {
-				L.log(Level.WARNING, "cannot read", e);
-				forceClose();
+				handleError("cannot read", e);
 			}
 		}
 
@@ -235,6 +243,11 @@ public class ClientConnection implements Connection {
 			while (true) {
 				CoderResult r = d.decode(readBuf, cbuf, false);
 				cbuf.flip();
+
+				if (r.isError()) {
+					handleError("error when decoding", null);
+					return;
+				}
 
 				input.append(cbuf.toString());
 				cbuf.clear();
@@ -248,6 +261,13 @@ public class ClientConnection implements Connection {
 
 				return;
 			}
+		}
+
+		private void handleError(String what, Throwable e) {
+			readBuf.clear();
+			cbuf.clear();
+			L.log(Level.WARNING, what, e);
+			forceClose();
 		}
 	}
 
