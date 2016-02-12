@@ -84,19 +84,22 @@ public class Client {
 						requestLogin();
 						return;
 					}
-					if (!(c instanceof IamCommand)) {
+					if (c instanceof IamCommand) {
+						dblog(cmd);
+
+						name = ((IamCommand) c).getUserName();
+						L.info("client name is " + name);
+
+						connection.enqueueWrite("has login " + new Record("system", name));
+						requestNextCmd();
+					} else if (c instanceof ByeCommand) {
+						dblog(cmd);
+
+						bye();
+					} else {
 						error();
 						requestLogin();
-						return;
 					}
-
-					dblog(cmd);
-
-					name = ((IamCommand) c).getUserName();
-					L.info("client name is " + name);
-
-					connection.enqueueWrite("has login " + new Record("system", name));
-					requestNextCmd();
 				} catch (ParserException e) {
 					error();
 					requestLogin();
@@ -122,8 +125,7 @@ public class Client {
 							dblog(msg);
 
 							if (c instanceof ByeCommand) {
-								connection.enqueueWrite("bye");
-								connection.enqueueClose();
+								bye();
 								return;
 							} else if (c instanceof GetCommand) {
 								String key = ((GetCommand) c).getKey();
@@ -176,5 +178,10 @@ public class Client {
 
 	private void dblog(String msg) {
 		log.println(connection + " " + FORMAT.format(new Date()) + " " + msg);
+	}
+
+	private void bye() {
+		connection.enqueueWrite("bye");
+		connection.enqueueClose();
 	}
 }
