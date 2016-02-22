@@ -226,7 +226,11 @@ public class ClientConnection implements Connection {
 					@Override
 					public void completed(Integer result, Void attachment) {
 						readBuf.flip();
-						parseMessage(next);
+						if (result == -1) {
+							parseEof(next);
+						} else {
+							parseMessage(next);
+						}
 					}
 
 					@Override
@@ -260,6 +264,36 @@ public class ClientConnection implements Connection {
 				testForInput(next);
 
 				return;
+			}
+		}
+
+		private void parseEof(Read next) {
+			CoderResult r;
+			do {
+				r = d.decode(readBuf, cbuf, true);
+				cbuf.flip();
+				input.append(cbuf.toString());
+				cbuf.clear();
+			} while (r.isOverflow());
+
+			do {
+				r = d.flush(cbuf);
+				cbuf.flip();
+				input.append(cbuf.toString());
+				cbuf.clear();
+			} while (r.isOverflow());
+
+			d.reset();
+
+			if (input.indexOf("\n") != -1) {
+				testForInput(next);
+			} else if (input.length() != 0) {
+				next.read(input.toString());
+				input.delete(0, input.length());
+				end();
+			} else {
+				next.read(null);
+				end();
 			}
 		}
 

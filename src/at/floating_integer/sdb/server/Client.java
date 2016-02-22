@@ -77,6 +77,13 @@ public class Client {
 
 			@Override
 			public void read(String cmd) {
+				if (cmd == null) {
+					dblog("eof");
+					L.info("eof during login");
+					connection.enqueueClose();
+					return;
+				}
+
 				try {
 					Command c = Command.parse(cmd);
 
@@ -112,6 +119,13 @@ public class Client {
 		connection.enqueueRead(new Connection.Read() {
 			@Override
 			public void read(String msg) {
+				if (msg == null) {
+					dblog("eof");
+					L.info("eof received");
+					connection.enqueueClose();
+					return;
+				}
+
 				try {
 					try {
 						Command c = Command.parse(msg);
